@@ -95,16 +95,10 @@ class DataLoader(object):
 
         filename_queue = tf.train.string_input_producer(tfrecords, shuffle=True)
 
-        # Makes an input queue
-        input_queue = tf.train.slice_input_producer([image_paths_queue,
-                                                     depth_paths_queue,
-                                                     cam_paths_queue,
-                                                     tgt2src_paths_queue],
-                                                     num_epochs = 1500,
-                                                     shuffle=True)
+
 
         #,tgt2scr_projs,m_scale
-        image_all, label, intrinsics,tgt2scr_projs = self.read_images_from_disk(input_queue)
+        image_all, label, intrinsics,tgt2scr_projs = self.read_labeled_tfrecord_list(filename_queue)
 
 
 
@@ -120,9 +114,67 @@ class DataLoader(object):
         #import pdb;pdb.set_trace()
         return tgt_image, src_image_stack, label_batch, intrinsics, tgt2scr_projs
     
-    def read_labeled_tfrecord_list(self):
-        tfrecords = glob.glob(self.dataset_dir+"/*.tfrecords")
-        return tfrecords
+
+    def read_labeled_tfrecord_list(self,filename_queue):
+        reader = tf.TFRecordReader()
+
+        _, serialized_example = reader.read(filename_queue)
+
+        features = tf.parse_single_example(
+          serialized_example,
+          # Defaults are not specified since both keys are required.
+          features={
+            'height': tf.FixedLenFeature([], tf.int64),
+            'width': tf.FixedLenFeature([], tf.int64),
+            'max_views_num': tf.FixedLenFeature([], tf.int64),
+            'image_raw': tf.FixedLenFeature([], tf.string),
+            'depth': tf.FixedLenFeature([], tf.string),
+            'motion_raw': tf.FixedLenFeature([], tf.string),
+            })
+
+        # Convert from a scalar string tensor (whose single string has
+        # length mnist.IMAGE_PIXELS) to a uint8 tensor with shape
+        # [mnist.IMAGE_PIXELS].
+        image = tf.decode_raw(features['image_raw'], tf.uint8)
+        depth = tf.decode_raw(features['depth'], tf.float32)
+
+        height = tf.cast(features['height'], tf.int32)
+        width = tf.cast(features['width'], tf.int32)
+        num_views = tf.cast(features['max_views_num'], tf.int32)
+
+        image_shape = tf.pack([height, width*num_views, 3])
+        depth_shape = tf.pack([height, width*num_views, 1])
+
+        image = tf.reshape(image, image_shape)
+        depth = tf.reshape(depth, depth_shape)
+
+        #Crop out source and target
+
+
+        image_size_const = tf.constant((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=tf.int32)
+        annotation_size_const = tf.constant((IMAGE_HEIGHT, IMAGE_WIDTH, 1), dtype=tf.int32)
+
+        # Random transformations can be put here: right before you crop images
+        # to predefined size. To get more information look at the stackoverflow
+        # question linked above.
+
+        resized_image = tf.image.resize_image_with_crop_or_pad(image=image,
+                                               target_height=IMAGE_HEIGHT,
+                                               target_width=IMAGE_WIDTH)
+
+        resized_annotation = tf.image.resize_image_with_crop_or_pad(image=annotation,
+                                               target_height=IMAGE_HEIGHT,
+                                               target_width=IMAGE_WIDTH)
+
+
+        images, annotations = tf.train.shuffle_batch( [resized_image, resized_annotation],
+                                                     batch_size=2,
+                                                     capacity=30,
+                                                     num_threads=2,
+                                                     min_after_dequeue=10)
+
+        return images, annotations          
+
 
     def read_labeled_image_list(self):
         """Reads a .txt file containing pathes and labeles
