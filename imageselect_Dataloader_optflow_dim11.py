@@ -11,19 +11,76 @@ class DataLoader(object):
                  batch_size,
                  image_height,
                  image_width,
-                 num_source,
-                 num_scales,
-                 split):
+                 split,
+                 num_scales
+                 ):
         self.dataset_dir=dataset_dir
         self.batch_size=batch_size
         self.image_height=image_height
         self.image_width=image_width
         self.split=split
-        self.num_source = num_source
         self.num_scales = num_scales
         self.resizedheight = 224
         self.resizedwidth = 224
         self.depth_dir = '/home/wrlife/project/Unsupervised_Depth_Estimation/scripts/data/goodimages/'
+
+
+ 
+    def read_and_decode(self):
+        
+
+
+        reader = tf.TFRecordReader()
+        _, serialized_example = reader.read(filename_queue)
+        features = tf.parse_single_example(
+          serialized_example,
+          # Defaults are not specified since both keys are required.
+          features={
+            'height': tf.FixedLenFeature([], tf.int64),
+            'width': tf.FixedLenFeature([], tf.int64),
+            'image_raw': tf.FixedLenFeature([], tf.string),
+            'mask_raw': tf.FixedLenFeature([], tf.string)
+            })
+
+        # Convert from a scalar string tensor (whose single string has
+        # length mnist.IMAGE_PIXELS) to a uint8 tensor with shape
+        # [mnist.IMAGE_PIXELS].
+        image = tf.decode_raw(features['image_raw'], tf.uint8)
+        annotation = tf.decode_raw(features['mask_raw'], tf.uint8)
+        
+        height = tf.cast(features['height'], tf.int32)
+        width = tf.cast(features['width'], tf.int32)
+        
+        image_shape = tf.pack([height, width, 3])
+        annotation_shape = tf.pack([height, width, 1])
+        
+        image = tf.reshape(image, image_shape)
+        annotation = tf.reshape(annotation, annotation_shape)
+        
+        image_size_const = tf.constant((IMAGE_HEIGHT, IMAGE_WIDTH, 3), dtype=tf.int32)
+        annotation_size_const = tf.constant((IMAGE_HEIGHT, IMAGE_WIDTH, 1), dtype=tf.int32)
+        
+        # Random transformations can be put here: right before you crop images
+        # to predefined size. To get more information look at the stackoverflow
+        # question linked above.
+        
+        resized_image = tf.image.resize_image_with_crop_or_pad(image=image,
+                                               target_height=IMAGE_HEIGHT,
+                                               target_width=IMAGE_WIDTH)
+        
+        resized_annotation = tf.image.resize_image_with_crop_or_pad(image=annotation,
+                                               target_height=IMAGE_HEIGHT,
+                                               target_width=IMAGE_WIDTH)
+        
+        
+        images, annotations = tf.train.shuffle_batch( [resized_image, resized_annotation],
+                                                     batch_size=2,
+                                                     capacity=30,
+                                                     num_threads=2,
+                                                     min_after_dequeue=10)
+        
+        return images, annotations           
+
 
 
     def load_train_batch(self):
@@ -31,12 +88,12 @@ class DataLoader(object):
         seed = random.randint(0, 2**31 - 1)
 
         # Reads pfathes of images together with their labels
-        file_list = self.read_labeled_image_list()
+        
 
-        image_paths_queue = tf.convert_to_tensor(file_list['image_file_list'], dtype=tf.string)
-        depth_paths_queue = tf.convert_to_tensor(file_list['gt_depth_file_list'], dtype=tf.string)
-        cam_paths_queue = tf.convert_to_tensor(file_list['cam_file_list'], dtype=tf.string)
-        tgt2src_paths_queue = tf.convert_to_tensor(file_list['tgt2src_proj_list'], dtype=tf.string)
+        tfrecords = glob.glob(self.dataset_dir+"/*.tfrecords")
+        image_paths_queue = tf.convert_to_tensor(tfrecords, dtype=tf.string)
+
+        filename_queue = tf.train.string_input_producer(tfrecords, shuffle=True)
 
         # Makes an input queue
         input_queue = tf.train.slice_input_producer([image_paths_queue,
@@ -63,6 +120,9 @@ class DataLoader(object):
         #import pdb;pdb.set_trace()
         return tgt_image, src_image_stack, label_batch, intrinsics, tgt2scr_projs
     
+    def read_labeled_tfrecord_list(self):
+        tfrecords = glob.glob(self.dataset_dir+"/*.tfrecords")
+        return tfrecords
 
     def read_labeled_image_list(self):
         """Reads a .txt file containing pathes and labeles

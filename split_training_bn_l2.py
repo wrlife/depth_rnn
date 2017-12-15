@@ -1,23 +1,15 @@
 from __future__ import division
-import tensorflow as tf
+
+
 import pprint
 import random
 import numpy as np
 
-import tensorflow.contrib.slim.nets
-from tensorflow.contrib.slim.python.slim.learning import train_step
-
 from imageselect_Dataloader_optflow_dim11 import DataLoader
 #from Demon_Data_loader import *
 
+from rnn_depth_train import *
 import os
-
-from nets_optflow_depth import *
-
-from utils_lr import *
-from tfutils import *
-
-from my_losses import *
 
 
 import PIL.Image as pil
@@ -69,8 +61,6 @@ FLAGS.cam_weight_tran = 10
 FLAGS.resizedheight = 192
 FLAGS.resizedwidth = 256
 
-slim = tf.contrib.slim
-resnet_v2 = tf.contrib.slim.nets.resnet_v2
 
 
 
@@ -95,6 +85,7 @@ def sculpt_validation(valleft,valright):
         pred_valid, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,                                                    
                                                                                             is_training=False)
     return pred_valid
+
 
 
 
@@ -412,41 +403,47 @@ def main(_):
         #Load image and labels
         #============================================
         with tf.name_scope("data_loading"):
-            # imageloader = DataLoader(FLAGS.dataset_dir,
-            #                          FLAGS.batch_size,
-            #                          FLAGS.image_height, 
-            #                          FLAGS.image_width,
-            #                          FLAGS.num_sources,
-            #                          FLAGS.num_scales,
-            #                          'train')
+            imageloader = DataLoader(FLAGS.dataset_dir,
+                                     FLAGS.batch_size,
+                                     FLAGS.image_height, 
+                                     FLAGS.image_width,
+                                     'train',
+                                     FLAGS.num_scales)
 
-            # image_left, image_right, label, intrinsics, gt_right_cam = imageloader.load_train_batch()
+            imageloader.test_load()
+            #image_left, image_right, label, intrinsics, gt_right_cam = imageloader.load_train_batch()
             # label2 = tf.image.resize_area(label, 
             #     [int(FLAGS.resizedheight/(2**2)), int(FLAGS.resizedwidth/(2**2))])
-            data_dict,ground_truth,intrinsics = Demon_Dataloader()
-            image_left, image_right = tf.split(value=data_dict['IMAGE_PAIR'], num_or_size_splits=2, axis=3)
-            gt_right_cam = tf.concat([ground_truth['translation'],ground_truth['rotation']],axis=1)
-            label = ground_truth['depth0']
-            label2 = ground_truth['depth2']
+            # data_dict,ground_truth,intrinsics = Demon_Dataloader()
+            # image_left, image_right = tf.split(value=data_dict['IMAGE_PAIR'], num_or_size_splits=2, axis=3)
+            # gt_right_cam = tf.concat([ground_truth['translation'],ground_truth['rotation']],axis=1)
+            # label = ground_truth['depth0']
+            # label2 = ground_truth['depth2']
+
+
+        #============================================
+        #Run RNN depth training
+        #============================================
+        # rnn_depth_train(dataset)
 
 
 
-        pairwise_depth_train(image_left,image_right,label2,gt_right_cam,intrinsics,FLAGS)
+        # pairwise_depth_train(image_left,image_right,label2,gt_right_cam,intrinsics,FLAGS)
 
 
-        with tf.variable_scope("model_pairdepth") as scope:
+        # with tf.variable_scope("model_pairdepth") as scope:
             
-            inputdata = tf.concat([image_left, image_right], axis=3)
-            scope.reuse_variables()
-            pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,                                                    
-                                                                                                is_training=False)
-            saver_pair = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,scope="model_pairdepth"))
-            checkpoint_pair = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
+        #     inputdata = tf.concat([image_left, image_right], axis=3)
+        #     scope.reuse_variables()
+        #     pred_depth_left, pred_poses_right, pred_exp_logits_left, depth_net_endpoints_left = depth_net(inputdata,                                                    
+        #                                                                                         is_training=False)
+        #     saver_pair = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES,scope="model_pairdepth"))
+        #     checkpoint_pair = tf.train.latest_checkpoint(FLAGS.checkpoint_dir)
 
-        # FLAGS.depth_weight = 10
-        # FLAGS.depth_sig_weight = 20
+        # # FLAGS.depth_weight = 10
+        # # FLAGS.depth_sig_weight = 20
         
-        single_depth_training(label,FLAGS,image_left,pred_depth_left[0],saver_pair,checkpoint_pair)
+        # single_depth_training(label,FLAGS,image_left,pred_depth_left[0],saver_pair,checkpoint_pair)
 
 
 
