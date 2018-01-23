@@ -5,10 +5,10 @@ import pprint
 import random
 import numpy as np
 
-from imageselect_Dataloader_optflow_dim11 import DataLoader
+from imageselect_Dataloader_optflow_dim11_seq import DataLoader
 #from Demon_Data_loader import *
 
-from rnn_depth_train import *
+from rnn_depth_train_seq import *
 import os
 
 
@@ -24,7 +24,7 @@ flags.DEFINE_integer("image_height", 192, "The size of of a sample batch")
 flags.DEFINE_integer("image_width", 256, "The size of of a sample batch")
 flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam")
 flags.DEFINE_float("beta1", 0.9, "Momentum term of adam")
-flags.DEFINE_integer("batch_size", 16, "The size of of a sample batch")
+flags.DEFINE_integer("batch_size", 5, "The size of of a sample batch")
 flags.DEFINE_string("pretrain_weight_dir", "./pretrained", "Directory name to pretrained weights")
 flags.DEFINE_integer("validation_check", 100, "Directory name to pretrained weights")
 flags.DEFINE_integer("num_sources", 2, "number of sources")
@@ -185,7 +185,7 @@ def single_depth_training(label,FLAGS,image_left,pred_depth_left,saver_pair,chec
                 #print("steps %d" % (step))
                 fetches = {
                     "train": train_op,
-                    "global_step_single": global_step_single,
+                    "global_step": global_step_single,
                     "incr_global_step": incr_global_step
                 }
 
@@ -410,7 +410,11 @@ def main(_):
                                      'train',
                                      FLAGS.num_scales)
 
-            imageloader.test_load()
+            dataset = imageloader.load_train_batch2()
+
+
+        
+
             #image_left, image_right, label, intrinsics, gt_right_cam = imageloader.load_train_batch()
             # label2 = tf.image.resize_area(label, 
             #     [int(FLAGS.resizedheight/(2**2)), int(FLAGS.resizedwidth/(2**2))])
@@ -424,7 +428,7 @@ def main(_):
         #============================================
         #Run RNN depth training
         #============================================
-        # rnn_depth_train(dataset)
+        rnn_depth_train(dataset,FLAGS)
 
 
 

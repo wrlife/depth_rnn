@@ -6,7 +6,7 @@ from nets_optflow_depth import *
 from utils_lr import *
 from tfutils import *
 
-from my_losses import *
+from my_losses_seq import *
 
 from tensorflow.contrib.slim.python.slim.learning import train_step
 
@@ -26,6 +26,7 @@ def rnn_depth_train(dataset,FLAGS):
         tgt_image = dataset['tgt_image']
         src_images = dataset['src_images']
         tgt_depth = dataset['tgt_depth']
+        src_depths = dataset['src_depths'] 
         tgt_motion = dataset['tgt_motion']
         src_motions = dataset['src_motions']
         height = dataset['height']
@@ -51,6 +52,9 @@ def rnn_depth_train(dataset,FLAGS):
             src_image =  tf.slice(src_images,
                                   [0, 0, width*i, 0], 
                                   [-1, -1, int(width), -1])
+            src_depth =  tf.slice(src_depths,
+                                  [0, 0, width*i, 0], 
+                                  [-1, -1, int(width), -1])
             current_input = tf.concat([tgt_image,src_image,current_est],axis = 3)
             pred_depth, pred_pose, _ = rnn_depth_net(current_input,is_training=True)
             scope.reuse_variables()
@@ -58,12 +62,12 @@ def rnn_depth_train(dataset,FLAGS):
             current_est = pred_depth[0]
             if i==0:
                 est_depths = pred_depth[0]
-                gt_depths = tgt_depth
+                gt_depths = src_depth
             else:
                 est_depths = tf.concat([est_depths,pred_depth[0]],axis = 2)
-                gt_depths = tf.concat([gt_depths,tgt_depth],axis = 2)
+                gt_depths = tf.concat([gt_depths,src_depth],axis = 2)
 
-            #tgt_image = src_image
+            tgt_image = src_image
 
 
     #==============
@@ -95,14 +99,14 @@ def rnn_depth_train(dataset,FLAGS):
 
     tf.summary.histogram("gt_depth", sops.replace_nonfinite(gt_depths))
     tf.summary.histogram('pred_depth',
-        est_depths[0])
+        est_depths)
 
 
     tf.summary.image('image_seq' , \
                      image_seq)
            
     tf.summary.image('est_depth' , \
-                     est_depths[:,20:height-20,30:width-30,:])     
+                     est_depths)     
 
     tf.summary.image('gt_depth' , \
                      1.0/gt_depths)

@@ -110,6 +110,13 @@ class DataLoader(object):
                                  [0, 0, 0], 
                                  [-1, self.resizedwidth, -1])
             tgt_depth.set_shape([self.resizedheight,self.resizedwidth, 1])
+            
+            src_depths = tf.slice(depth, 
+                                [0, self.resizedwidth, 0], 
+                                [-1, self.resizedwidth * (self.num_views-1), -1])
+
+            src_depths.set_shape([self.resizedheight, self.resizedwidth*(self.num_views-1), 1])   
+            
             #depth.set_shape([self.resizedheight,self.resizedwidth*self.num_views, 1])
 
             motion = tf.reshape(motion,[3,4*self.num_views])
@@ -138,6 +145,7 @@ class DataLoader(object):
             dataset['tgt_image'] = tg_image
             dataset['src_images'] = src_images
             dataset['tgt_depth'] = tgt_depth
+            dataset['src_depths'] = src_depths
             dataset['tgt_motion'] = tgt_motion
             dataset['src_motions'] = src_motions
             dataset['intrinsics'] = intrinsics
@@ -146,10 +154,10 @@ class DataLoader(object):
 
 
         # Parse the record into tensors.
-        dataset = dataset.map(_parse_function,output_buffer_size = 500, num_parallel_calls = 16)  
+        dataset = dataset.map(_parse_function,output_buffer_size = 100, num_parallel_calls = 16)  
 
         # Shuffle the dataset
-        dataset = dataset.shuffle(buffer_size=100)
+        dataset = dataset.shuffle(buffer_size=500)
 
         # Repeat the input indefinitly
         dataset = dataset.repeat()  
@@ -260,7 +268,7 @@ class DataLoader(object):
                              [-1, img_width, -1])
 
         # Source frames before the target frame
-        src_image_stack = tf.slice(image_seq, [0, img_width, 0], [-1, int(img_width * (num_source-1)), -1])
+        src_image_stack = tf.slice(image_seq, [0, img_width, 0], [-1, img_width * (num_source-1), -1])
 
         src_image_stack.set_shape([img_height, 
                                    img_width*(num_source-1), 

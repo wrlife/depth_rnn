@@ -353,12 +353,15 @@ def compute_loss_rnn(dataset,state_series,global_step,FLAGS):
         # GT_tgt_motion = tf.concat([GT_tgt_motion, filler], axis=1)
         # GT_src_motion = tf.concat([GT_src_motion, filler], axis=1)
 
-        # GT_proj_l2r = tf.matmul(GT_tgt_motion,tf.matrix_inverse(GT_src_motion));
+        # GT_proj_l2r = tf.matmul(tf.matrix_inverse(GT_src_motion),GT_tgt_motion);
 
         global_stepf = tf.to_float(global_step)
         depth_sig_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_sig_weight, float(FLAGS.max_steps//3))
 
-        label = dataset['tgt_depth']
+        #label = dataset['tgt_depth']
+
+        src_depths = dataset['src_depths']
+
         # image_left = dataset['tgt_image']
 
         # src_images = dataset['src_images']
@@ -381,8 +384,14 @@ def compute_loss_rnn(dataset,state_series,global_step,FLAGS):
         #     format='matrix'
         #     )
 
-
+        height = dataset['height']
+        width = dataset['width']
         for i in range(num_views-1):
+
+            label =  tf.slice(src_depths,
+                                  [0, 0, width*i, 0], 
+                                  [-1, -1, int(width), -1])
+
 
             depth_loss = 0
             cam_loss = 0
@@ -441,6 +450,8 @@ def compute_loss_rnn(dataset,state_series,global_step,FLAGS):
 
             depth_loss_total.append(depth_loss)
             loss_depth_sig_total.append(loss_depth_sig)
+
+
 
 
         #rnn_loss['cam_loss'] = tf.reduce_mean(cam_loss_total)
