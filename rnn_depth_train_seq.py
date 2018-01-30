@@ -3,6 +3,9 @@
 import tensorflow as tf
 from nets_optflow_depth import *
 
+import PIL.Image as pil
+from PIL import Image
+
 from utils_lr import *
 from tfutils import *
 
@@ -10,6 +13,22 @@ from my_losses_seq import *
 
 from tensorflow.contrib.slim.python.slim.learning import train_step
 
+####################
+#Validate
+####################
+def sculpt_validation(valleft,valright,init_state):
+
+    #Load image and label
+
+    with tf.variable_scope("model_rnndepth") as scope:
+
+        scope.reuse_variables()
+        inputdata = tf.concat([valright,valleft,init_state], axis=3)
+
+        pred_valid, _, _ = rnn_depth_net(inputdata,is_training=False)
+
+
+    return pred_valid
 
 
 def rnn_depth_train(dataset,FLAGS):
@@ -33,7 +52,6 @@ def rnn_depth_train(dataset,FLAGS):
         width = dataset['width']
         batch_size = dataset['batch_size']
 
-        
         init_state = tf.placeholder(tf.float32,[batch_size,height,width,1])
 
         #Define model
@@ -70,6 +88,16 @@ def rnn_depth_train(dataset,FLAGS):
             tgt_image = src_image
 
 
+    ####################
+    #Validate
+    ####################
+    valleft = tf.placeholder(shape=[1, FLAGS.resizedheight, FLAGS.resizedwidth, 3], dtype=tf.float32)
+    valright = tf.placeholder(shape=[1, FLAGS.resizedheight, FLAGS.resizedwidth, 3], dtype=tf.float32)
+    valid_init_state = tf.placeholder(tf.float32,[1,height,width,1])
+    pred_valid = sculpt_validation(valright,valleft,valid_init_state)
+
+
+
     #==============
     #Compute Loss and define bp
     #==============
@@ -86,6 +114,7 @@ def rnn_depth_train(dataset,FLAGS):
     # create_train_op that ensures that when we evaluate it to get the loss,
     # the update_ops are done and the gradient updates are computed.
     train_op = slim.learning.create_train_op(total_loss, optimizer)
+
     saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, 'model_rnndepth'),max_to_keep=10)        
 
     #==============
@@ -112,6 +141,10 @@ def rnn_depth_train(dataset,FLAGS):
                      1.0/gt_depths)
 
 
+    tf.summary.image('test_gt_cam' , \
+                     rnn_loss['proj_left'])
+
+
     est_depth1 =  tf.slice(est_depths,
                           [0, 0, 0, 0], 
                           [-1, -1, int(width), -1])
@@ -120,6 +153,13 @@ def rnn_depth_train(dataset,FLAGS):
                           [-1, -1, int(width), -1])
     tf.summary.image('difference' , \
                      1.0/est_depth1-1.0/est_depth2)
+
+
+    tf.summary.image('validate_pred',
+        pred_valid[0][:,20:height-20,30:width-30,:])
+    tf.summary.image('validate_image',
+        valright*255+0.5)
+
     #Session
     with tf.Session() as sess:
 
@@ -153,6 +193,7 @@ def rnn_depth_train(dataset,FLAGS):
            
             _current_state = np.zeros([dataset['batch_size'],dataset['height'],dataset['width'],1])
 
+            _valid_state = np.zeros([1,dataset['height'],dataset['width'],1])
 
             if step % FLAGS.summary_freq == 0:
                 fetches["loss"] = total_loss
@@ -160,7 +201,29 @@ def rnn_depth_train(dataset,FLAGS):
                 fetches["learn_rate"] = learning_rate
 
 
-            results = sess.run(fetches,feed_dict={init_state: _current_state})
+            feed_dict = {}
+
+            if step % FLAGS.summary_freq == 0:
+
+                ####################
+                #Validate
+                ####################
+                I = Image.open("/home/wrlife/project/deeplearning/depth_prediction/data/sculpture1.png")
+                I1 = Image.open("/home/wrlife/project/deeplearning/depth_prediction/data/sculpture2.png")
+                I = I.resize((FLAGS.resizedwidth, FLAGS.resizedheight),pil.ANTIALIAS)
+                I1 = I1.resize((FLAGS.resizedwidth, FLAGS.resizedheight),pil.ANTIALIAS)
+                I = np.array(I).astype(np.float32)/255.0 -0.5
+                I1 = np.array(I1).astype(np.float32)/255.0 -0.5
+
+                fetches["validate"] = pred_valid
+
+                feed_dict={valleft: I[np.newaxis,:],
+                         valright: I1[np.newaxis,:],
+                         }
+                results = sess.run(fetches,feed_dict={valleft: I[np.newaxis,:],valright: I1[np.newaxis,:],init_state: _current_state,valid_init_state:_valid_state})
+            else:
+                results = sess.run(fetches,feed_dict={init_state: _current_state,valid_init_state:_valid_state})
+
 
             if step % FLAGS.summary_freq == 0:
                 

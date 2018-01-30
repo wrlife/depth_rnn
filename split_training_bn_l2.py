@@ -8,7 +8,7 @@ import numpy as np
 from imageselect_Dataloader_optflow_dim11_seq import DataLoader
 #from Demon_Data_loader import *
 
-from rnn_depth_train_seq import *
+from rnn_depth_train_3d import *
 import os
 
 
@@ -20,8 +20,8 @@ flags.DEFINE_string("dataset_dir", "", "Dataset directory")
 flags.DEFINE_string("validate_dir", "./validation", "Dataset directory")
 flags.DEFINE_string("checkpoint_dir", "./checkpoints/", "Directory name to save the checkpoints")
 flags.DEFINE_string("checkpoint_dir_single", "./checkpoints_single/", "Directory name to save the checkpoints")
-flags.DEFINE_integer("image_height", 192, "The size of of a sample batch")
-flags.DEFINE_integer("image_width", 256, "The size of of a sample batch")
+flags.DEFINE_integer("image_height", 480, "The size of of a sample batch")
+flags.DEFINE_integer("image_width", 640, "The size of of a sample batch")
 flags.DEFINE_float("learning_rate", 0.0002, "Learning rate of for adam")
 flags.DEFINE_float("beta1", 0.9, "Momentum term of adam")
 flags.DEFINE_integer("batch_size", 5, "The size of of a sample batch")
@@ -54,8 +54,9 @@ FLAGS.depth_weight = 500
 FLAGS.depth_weight_consist = 10
 FLAGS.depth_sig_weight = 1000
 FLAGS.explain_reg_weight = 1
-FLAGS.cam_weight_rot = 160
+FLAGS.cam_weight_rot = 100
 FLAGS.cam_weight_tran = 10
+FLAGS.normal_weight = 100
 
 
 FLAGS.resizedheight = 192
@@ -410,7 +411,7 @@ def main(_):
                                      'train',
                                      FLAGS.num_scales)
 
-            dataset = imageloader.load_train_batch2()
+            dataset = imageloader.load_train_batch_hs()
 
 
         

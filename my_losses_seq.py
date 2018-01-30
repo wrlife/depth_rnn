@@ -337,23 +337,46 @@ def compute_loss_rnn(dataset,state_series,global_step,FLAGS):
         #Adaptively changing weights
         #import pdb;pdb.set_trace()
 
-        # GT_tgt_motion = dataset['tgt_motion']
+        GT_tgt_motion = dataset['tgt_motion']
 
-        # src_motions = dataset['src_motions']
+        src_motions = dataset['src_motions']
 
-        # GT_src_motion =   tf.slice(src_motions,
-        #                       [0,0,4*8],
-        #                       [-1,-1,4])
+        label = dataset['tgt_depth']
+        src_images = dataset['src_images']
+        height = dataset['height']
+        width = dataset['width']
+        intrinsics = dataset['intrinsics']       
+        GT_src_motion =   tf.slice(src_motions,
+                              [0,0,0],
+                              [-1,-1,4])
 
 
 
-        # filler = tf.constant([0.0, 0.0, 0.0, 1.0], shape=[1, 1, 4])
-        # filler = tf.tile(filler, [batch_size, 1, 1])
+        filler = tf.constant([0.0, 0.0, 0.0, 1.0], shape=[1, 1, 4])
+        filler = tf.tile(filler, [batch_size, 1, 1])
 
-        # GT_tgt_motion = tf.concat([GT_tgt_motion, filler], axis=1)
-        # GT_src_motion = tf.concat([GT_src_motion, filler], axis=1)
+        GT_tgt_motion = tf.concat([GT_tgt_motion, filler], axis=1)
+        GT_src_motion = tf.concat([GT_src_motion, filler], axis=1)
 
-        # GT_proj_l2r = tf.matmul(tf.matrix_inverse(GT_src_motion),GT_tgt_motion);
+        GT_proj_l2r = tf.matmul(GT_src_motion,tf.matrix_inverse(GT_tgt_motion));
+
+        curr_image_right =  tf.slice(src_images,
+                                  [0, 0, 0, 0], 
+                                  [-1, -1, int(width), -1])
+
+        #import pdb;pdb.set_trace()
+        curr_image_right.set_shape([batch_size,height,width,3])
+        label.set_shape([batch_size,height,width,1])
+        curr_proj_image_left, _,_, _,_= projective_inverse_warp(
+            curr_image_right, 
+            tf.squeeze(1.0/(label), axis=3),
+            GT_proj_l2r,
+            intrinsics[:,:,:],
+            format='matrix'
+            )
+
+        test_gtcam = tf.concat([dataset['tgt_image'],curr_proj_image_left],axis = 2)
+
 
         global_stepf = tf.to_float(global_step)
         depth_sig_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_sig_weight, float(FLAGS.max_steps//3))
@@ -368,21 +391,9 @@ def compute_loss_rnn(dataset,state_series,global_step,FLAGS):
 
         # width = dataset['width']
 
-        # curr_image_right =  tf.slice(src_images,
-        #                           [0, 0, width*8, 0], 
-        #                           [-1, -1, int(width), -1])        
-
-        # import pdb;pdb.set_trace()
-        # intrinsics = dataset['intrinsics'];
 
 
-        # curr_proj_image_left, _,_, _,_= projective_inverse_warp(
-        #     curr_image_right, 
-        #     tf.squeeze(1.0/(label), axis=3),
-        #     GT_proj_l2r,
-        #     intrinsics[:,:,:],
-        #     format='matrix'
-        #     )
+
 
         height = dataset['height']
         width = dataset['width']
@@ -397,7 +408,7 @@ def compute_loss_rnn(dataset,state_series,global_step,FLAGS):
             cam_loss = 0
             loss_depth_sig = 0
 
-            pred_depth, pred_pose = state_series[i]
+            pred_depth = state_series[i]
 
             #import pdb;pdb.set_trace()
 
@@ -457,9 +468,260 @@ def compute_loss_rnn(dataset,state_series,global_step,FLAGS):
         #rnn_loss['cam_loss'] = tf.reduce_mean(cam_loss_total)
         rnn_loss['depth_loss'] = tf.reduce_mean(depth_loss_total)
         rnn_loss['loss_depth_sig'] = tf.reduce_mean(loss_depth_sig_total)
-        #rnn_loss['proj_left'] = curr_proj_image_left;
+        rnn_loss['proj_left'] = test_gtcam;
 
     return rnn_loss
 
     # return depth_loss, cam_loss, pixel_loss, consist_loss, loss_depth_sig, exp_loss, left_image_all, right_image_all, proj_image_left_all#,proj_image_right_all,proj_error_stack_all
 
+
+
+def compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS):
+
+
+    #============================================   
+    #Specify the loss function:
+    #============================================
+    with tf.name_scope("compute_loss"):
+
+        rnn_loss = {}
+
+
+        cam_loss_total = []
+        depth_loss_total = []
+        loss_depth_sig_total = []
+        loss_threeD_total = []
+
+        epsilon = 0.000001
+
+        left_image_all = []
+        right_image_all = []
+
+        proj_image_left_all = []
+        proj_image_right_all = []
+
+        proj_error_stack_all = []
+
+        test = []
+        testimg = []
+
+        pred_poses = []
+        gt_poses = []
+
+
+        num_views = dataset['num_views']
+        batch_size = dataset['batch_size']
+        intrinsics = dataset['intrinsics']
+        motions = dataset['motions']
+
+
+
+        #Adaptively changing weights
+        #import pdb;pdb.set_trace()
+
+        GT_tgt_motion = tf.slice(motions,
+                                  [0,0,0],
+                                  [-1,-1,4])
+
+        # src_motions = dataset['src_motions']
+
+        # label = dataset['tgt_depth']
+        # src_images = dataset['src_images']
+        # height = dataset['height']
+        # width = dataset['width']
+        # intrinsics = dataset['intrinsics']       
+        # GT_src_motion =   tf.slice(src_motions,
+        #                       [0,0,0],
+        #                       [-1,-1,4])
+
+
+
+        filler = tf.constant([0.0, 0.0, 0.0, 1.0], shape=[1, 1, 4])
+        filler = tf.tile(filler, [batch_size, 1, 1])
+
+        GT_tgt_motion = tf.matrix_inverse(tf.concat([GT_tgt_motion, filler], axis=1))
+
+
+        intrinsics_homo = tf.concat([intrinsics, tf.zeros([int(batch_size), 3, 1])], axis=2)
+        intrinsics_homo = tf.concat([intrinsics_homo, filler], axis=1)
+        # GT_src_motion = tf.concat([GT_src_motion, filler], axis=1)
+
+        # GT_proj_l2r = tf.matmul(GT_src_motion,tf.matrix_inverse(GT_tgt_motion));
+
+        # curr_image_right =  tf.slice(src_images,
+        #                           [0, 0, 0, 0], 
+        #                           [-1, -1, int(width), -1])
+
+        # #import pdb;pdb.set_trace()
+        # curr_image_right.set_shape([batch_size,height,width,3])
+        # label.set_shape([batch_size,height,width,1])
+        # curr_proj_image_left, _,_, _,_= projective_inverse_warp(
+        #     curr_image_right, 
+        #     tf.squeeze(1.0/(label), axis=3),
+        #     GT_proj_l2r,
+        #     intrinsics[:,:,:],
+        #     format='matrix'
+        #     )
+
+        # test_gtcam = tf.concat([dataset['tgt_image'],curr_proj_image_left],axis = 2)
+
+
+        global_stepf = tf.to_float(global_step)
+        depth_sig_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_sig_weight, float(FLAGS.max_steps//3))
+        threeD_weight = ease_out_quad(global_stepf, 0, FLAGS.depth_weight, float(FLAGS.max_steps//3))
+        #label = dataset['tgt_depth']
+
+        depths = dataset['depths']
+        images = dataset['images']
+
+        # image_left = dataset['tgt_image']
+
+        # src_images = dataset['src_images']
+
+        # width = dataset['width']
+
+
+
+
+
+        height = dataset['height']
+        width = dataset['width']
+        for i in range(num_views):
+
+            depth_loss = 0
+            cam_loss = 0
+            loss_depth_sig = 0
+            threeD_loss = 0
+
+
+            #Convert label to 3D
+            label =  tf.slice(depths,
+                                  [0, 0, width*i, 0], 
+                                  [-1, -1, int(width), -1])
+            image =  tf.slice(images,
+                                  [0, 0, width*i, 0], 
+                                  [-1, -1, int(width), -1])
+
+
+            pred_depth,pred_pose = state_series[i]
+
+
+            proj_r2l = pose_vec2mat(pred_pose[:,0,:],'eular')
+
+            
+
+            # proj_l2r = pose_vec2mat(pred_pose[:,0,:],'eular')
+
+            #=============
+            #Compute camera loss
+            #=============
+            GT_src_motion =  tf.slice(motions,
+                                  [0,0,4*i],
+                                  [-1,-1,4])
+            GT_src_motion = tf.matrix_inverse(tf.concat([GT_src_motion, filler], axis=1))
+            GT_proj_r2l = tf.matmul(tf.matrix_inverse(GT_tgt_motion),GT_src_motion)
+
+            cam_loss  += tf.reduce_mean((GT_proj_r2l[:,0:3,0:3]-proj_r2l[:,0:3,0:3])**2)*FLAGS.cam_weight_rot
+            cam_loss  += tf.reduce_mean((GT_proj_r2l[:,0:3,3]-proj_r2l[:,0:3,3])**2)*FLAGS.cam_weight_tran
+            cam_loss_total.append(cam_loss)
+
+
+
+            pred_poses.append(proj_r2l);
+            gt_poses.append(GT_proj_r2l)
+
+
+            
+            for s in range(FLAGS.num_scales):
+
+
+                curr_label = tf.image.resize_area(label, 
+                    [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
+
+                pixel_coords = meshgrid(int(batch_size), int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)))
+
+                #import pdb;pdb.set_trace()
+                # Generate ground truth 3D
+                curr_label.set_shape([batch_size,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)),1])
+                cam_coords = pixel2cam(tf.squeeze((1.0/curr_label), axis=3), pixel_coords, intrinsics/(2**s))
+                cam_coords = tf.reshape(cam_coords, [batch_size, 4, -1])
+                cam_coords = tf.matmul(GT_proj_r2l, cam_coords)
+                cam_coords = tf.reshape(cam_coords, [batch_size,-1,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
+                cam_coords = tf.transpose(cam_coords, perm=[0, 2, 3, 1])[:,:,:,0:3]
+
+
+                # Generate pred 3D
+                cur_pred = pred_depth[s]
+                cur_pred.set_shape([batch_size,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)),1])
+                pred_3D = pixel2cam(tf.squeeze((1.0/cur_pred), axis=3), pixel_coords, intrinsics/(2**s))
+                pred_3D = tf.reshape(pred_3D, [batch_size, 4, -1]) 
+                pred_3D = tf.matmul(proj_r2l, pred_3D)
+                pred_3D = tf.reshape(pred_3D, [batch_size,-1,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
+                pred_3D = tf.transpose(pred_3D, perm=[0, 2, 3, 1])[:,:,:,0:3]
+
+
+                #=======
+                #sig depth loss
+                #=======
+                if s==0:
+                    sig_params = {'deltas':[1,2,4,8,16], 'weights':[1,1,1,1,1], 'epsilon': 0.001}
+                else:
+                    sig_params = {'deltas':[1,2], 'weights':[1,1], 'epsilon': 0.001}
+
+                pre_depth_sig = scale_invariant_gradient(tf.transpose(pred_depth[s], perm=[0,3,1,2]), **sig_params)
+
+                gt_depth_sig = scale_invariant_gradient(tf.transpose(curr_label, perm=[0,3,1,2]), **sig_params)
+
+                loss_depth_sig += depth_sig_weight* pointwise_l2_loss(pre_depth_sig, gt_depth_sig, epsilon=epsilon)/(2**(s))
+
+                
+
+                #=======
+                #3D loss
+                #=======
+                diff = sops.replace_nonfinite(cam_coords - pred_3D)
+                curr_threeD_error = tf.abs(diff)
+                threeD_loss += tf.reduce_mean(curr_threeD_error)*threeD_weight/(2**s)
+
+
+                #=======
+                #depth loss
+                #=======
+                #depth_loss+=pointwise_l2_loss(pred_depth[s],curr_label ,epsilon=epsilon)*FLAGS.depth_weight/(2**(s-2))
+                #import pdb;pdb.set_trace()
+                diff = sops.replace_nonfinite(curr_label - pred_depth[s])
+                curr_depth_error = tf.abs(diff)
+                depth_loss += tf.reduce_mean(curr_depth_error)*FLAGS.depth_weight/(2**s)
+
+
+
+                #==========
+                #Normal loss
+                #==========
+
+                # normal = sops.depth_to_normals(gt_depth, intrinsics_homo/(2**s), inverse_depth=False)
+                # pred_normal = sops.depth_to_normals(pred_depth, intrinsics_homo/(2**s), inverse_depth=False)
+                # diff = sops.replace_nonfinite(normal - pred_normal)
+                # curr_normal_error = tf.abs(diff)
+                # normal_loss += tf.reduce_mean(curr_normal_error)*FLAGS.normal_weight/(2**s)
+
+
+
+                # if s==0:
+                #     test.append(cam_coords[0,:,:,:])
+                #     testimg.append(image[0,:,:,:])
+
+            depth_loss_total.append(depth_loss)
+            loss_depth_sig_total.append(loss_depth_sig)
+            loss_threeD_total.append(threeD_loss)
+            #loss_normal_total.append(normal_loss)
+
+
+
+        rnn_loss['cam_loss'] = tf.reduce_mean(cam_loss_total)
+        rnn_loss['depth_loss'] = tf.reduce_mean(depth_loss_total)
+        rnn_loss['loss_depth_sig'] = tf.reduce_mean(loss_depth_sig_total)
+        rnn_loss['threeD_loss'] = tf.reduce_mean(loss_threeD_total)
+        #rnn_loss['proj_left'] = test_gtcam;
+
+    return rnn_loss,pred_poses,gt_poses

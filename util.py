@@ -236,24 +236,24 @@ def save_sfs_ply(filename, S, im=None):
 
   with open(filename, 'w') as f:
     if im is not None:
-      print>>f, PLY_HEADER.format(w * h, (w - 1) * (h - 1) * 2)
+      print(PLY_HEADER.format(w * h, (w - 1) * (h - 1) * 2),file=f)
       # write vertex data
       for p, c in izip(S, im):
-        print>>f, p[0], p[1], p[2], c[0], c[1], c[2]
+        print(p[0], p[1], p[2], c[0], c[1], c[2],file=f)
     else:
-      print>>f, PLY_HEADER_NO_COLOR.format(w * h, (w - 1) * (h - 1) * 2)
+      print(PLY_HEADER_NO_COLOR.format(w * h, (w - 1) * (h - 1) * 2),file=f)
       # write vertex data
       for p in S:
-        print>>f, p[0], p[1], p[2]
+        print(p[0], p[1], p[2],file=f)
 
     # write triangle data
     idx = 0
-    for i in xrange(h):
-      for j in xrange(w - 1):
+    for i in range(h):
+      for j in range(w - 1):
         if i < h - 1: # upper triangle, starting from top left
-          print>>f, '3', idx, idx + 1, idx + w
+          print('3', idx, idx + 1, idx + w,file=f)
         if i > 0: # lower triangle, starting from bottom left
-          print>>f, '3', idx, idx - w + 1, idx + 1
+          print('3', idx, idx - w + 1, idx + 1,file=f)
 
         idx += 1
       idx += 1

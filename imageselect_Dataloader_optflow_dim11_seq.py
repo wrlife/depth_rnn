@@ -5,6 +5,7 @@ import random
 import numpy as np
 import os
 import glob
+from random import shuffle
 
 
 class DataLoader(object):
@@ -74,7 +75,7 @@ class DataLoader(object):
 
     def load_train_batch2(self):
         # Creates a dataset that reads all of the examples from filenames.
-        tfrecords = glob.glob(self.dataset_dir+"/*.tfrecords")
+        tfrecords = shuffle(glob.glob(self.dataset_dir+"/*.tfrecords"))
         dataset = tf.contrib.data.TFRecordDataset(tfrecords)
 
         # example proto decode
@@ -130,7 +131,10 @@ class DataLoader(object):
                                   [-1,4*(self.num_views-1)])
             src_motions.set_shape([3,4*(self.num_views-1)])
 
-            intrinsics = np.array([(570.3422/2 ,0 ,320/2), (0 ,570.3422/2 ,240/2), (0 ,0 ,1)],dtype=np.float32);
+            x_resize_ratio = self.resizedwidth/self.image_width
+            y_resize_ratio = self.resizedheight/self.image_height
+
+            intrinsics = np.array([(570.3422*x_resize_ratio ,0 ,320*x_resize_ratio), (0 ,570.3422*y_resize_ratio ,240*y_resize_ratio), (0 ,0 ,1)],dtype=np.float32);
 
 
             # images, annotations = tf.train.shuffle_batch( [resized_image, resized_annotation],
@@ -154,7 +158,88 @@ class DataLoader(object):
 
 
         # Parse the record into tensors.
-        dataset = dataset.map(_parse_function,output_buffer_size = 100, num_parallel_calls = 16)  
+        dataset = dataset.map(_parse_function,output_buffer_size = 600, num_parallel_calls = 30)  
+
+        # Shuffle the dataset
+        dataset = dataset.shuffle(buffer_size=500)
+
+        # Repeat the input indefinitly
+        dataset = dataset.repeat()  
+
+        # Generate batches
+        dataset = dataset.batch(self.batch_size)
+
+        # Create a one-shot iterator
+        iterator = dataset.make_one_shot_iterator()
+
+        # Get batch X and y
+        m_batch = iterator.get_next()
+
+        m_batch['num_views'] = self.num_views
+        m_batch['height'] = self.resizedheight
+        m_batch['width'] = self.resizedwidth
+        m_batch['batch_size'] = self.batch_size
+
+        #import pdb;pdb.set_trace()
+        return m_batch
+
+    def load_train_batch_hs(self):
+        # Creates a dataset that reads all of the examples from filenames.
+        tfrecords = glob.glob(self.dataset_dir+"/*.tfrecords")
+        dataset = tf.contrib.data.TFRecordDataset(tfrecords)
+
+        # example proto decode
+        def _parse_function(example_proto):
+            keys_to_features = {
+                'height': tf.FixedLenFeature([], tf.int64),
+                'width': tf.FixedLenFeature([], tf.int64),
+                'max_views_num': tf.FixedLenFeature([], tf.int64),
+                'image_raw': tf.FixedLenFeature([], tf.string),
+                'depth': tf.FixedLenFeature([], tf.string),
+                'motion_raw': tf.FixedLenFeature([], tf.string),
+                }
+            features = tf.parse_single_example(example_proto, keys_to_features)
+
+            image = tf.decode_raw(features['image_raw'], tf.uint8)
+            depth = tf.decode_raw(features['depth'], tf.float32)
+            motion = tf.decode_raw(features['motion_raw'], tf.float32)
+
+
+            height = tf.cast(features['height'], tf.int32)
+            width = tf.cast(features['width'], tf.int32)
+            num_views = tf.cast(features['max_views_num'], tf.int32)
+
+
+            image = tf.to_float(tf.image.resize_images(tf.reshape(image, [height, width*num_views, 3]),[self.resizedheight,self.resizedwidth*self.num_views]))/255.0-0.5
+
+            image.set_shape([self.resizedheight,self.resizedwidth*self.num_views, 3])
+
+
+            depth = 1.0/tf.image.resize_images(tf.reshape(depth, [height, width*num_views, 1]),[self.resizedheight,self.resizedwidth*self.num_views])
+            depth.set_shape([self.resizedheight,self.resizedwidth*self.num_views, 1])
+
+
+            motion = tf.reshape(motion,[3,4*self.num_views])
+            motion.set_shape([3,4*self.num_views])
+
+            x_resize_ratio = self.resizedwidth/self.image_width
+            y_resize_ratio = self.resizedheight/self.image_height
+
+            intrinsics = np.array([(570.3422*x_resize_ratio ,0 ,320*x_resize_ratio), (0 ,570.3422*y_resize_ratio ,240*y_resize_ratio), (0 ,0 ,1)],dtype=np.float32);
+
+
+
+            dataset = {}
+            dataset['images'] = image
+            dataset['depths'] = depth
+            dataset['motions'] = motion
+            dataset['intrinsics'] = intrinsics
+
+            return dataset       
+
+
+        # Parse the record into tensors.
+        dataset = dataset.map(_parse_function,output_buffer_size = 600, num_parallel_calls = 30)  
 
         # Shuffle the dataset
         dataset = dataset.shuffle(buffer_size=500)
