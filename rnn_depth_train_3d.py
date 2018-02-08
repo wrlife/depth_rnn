@@ -32,7 +32,7 @@ def sculpt_validation(valleft,valright,init_state):
     return pred_valid
 
 
-def rnn_depth_train(dataset,FLAGS):
+def rnn_depth_train(dataset,dataset_valid,FLAGS):
 
     #==============
     #Build RNN model
@@ -86,9 +86,43 @@ def rnn_depth_train(dataset,FLAGS):
 
 
 
-    # ####################
-    # #Validate
-    # ####################
+        ####################
+        #Validate
+        ####################
+        if(dataset_valid is not None):
+            num_views_val = dataset_valid['num_views']
+            images_val = dataset_valid['images']
+            depths_val = dataset_valid['depths']
+            motions_val = dataset_valid['motions']
+
+            state_series_val = []
+            hidden_state = [init_state1,init_state2,init_state3]
+         
+            #The first view is target view so -1
+            for i in range(num_views_val):
+                #import pdb;pdb.set_trace()
+                image_val =  tf.slice(images_val,
+                                      [0, 0, width*i, 0], 
+                                      [-1, -1, int(width), -1])
+                depth_val =  tf.slice(depths_val,
+                                      [0, 0, width*i, 0], 
+                                      [-1, -1, int(width), -1])
+
+                pred_depth_val, hidden_state,pred_pose_val, _ = rnn_depth_net_hidst(image_val,hidden_state,is_training=False)
+                scope.reuse_variables()
+                #state_series_val.append([pred_depth_val,pred_pose_val])
+
+                if i==0:
+                    est_depths_val = pred_depth_val[0]
+                    gt_depths_val = depth_val
+                else:
+                    est_depths_val = tf.concat([est_depths_val,pred_depth_val[0]],axis = 2)
+                    gt_depths_val = tf.concat([gt_depths_val,depth_val],axis = 2)
+
+            abs_depth = sops.replace_nonfinite(gt_depths_val - est_depths_val)
+            abs_depth = tf.abs(abs_depth)
+            abs_depth = tf.reduce_mean(abs_depth) 
+
     # valleft = tf.placeholder(shape=[1, FLAGS.resizedheight, FLAGS.resizedwidth, 3], dtype=tf.float32)
     # valright = tf.placeholder(shape=[1, FLAGS.resizedheight, FLAGS.resizedwidth, 3], dtype=tf.float32)
     # valid_init_state = tf.placeholder(tf.float32,[1,height,width,1])
@@ -99,7 +133,7 @@ def rnn_depth_train(dataset,FLAGS):
     #==============
     #Compute Loss and define bp
     #==============
-    rnn_loss,pred_poses,gt_poses = compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS)
+    rnn_loss,test,test_img = compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS)
     
     total_loss = rnn_loss['depth_loss']+rnn_loss['loss_depth_sig'] + rnn_loss['cam_loss']+ rnn_loss['threeD_loss']
 
@@ -203,6 +237,9 @@ def rnn_depth_train(dataset,FLAGS):
     tf.summary.scalar('losses/loss_depth_sig', rnn_loss['loss_depth_sig'])
     # f.summary.scalar('losses/normal_loss', rnn_loss['normal_loss'])
 
+
+    
+
     tf.summary.histogram("gt_depth", sops.replace_nonfinite(gt_depths))
     tf.summary.histogram('pred_depth',
         est_depths)
@@ -212,7 +249,7 @@ def rnn_depth_train(dataset,FLAGS):
                      images)
            
     tf.summary.image('est_depth' , \
-                     tf.cast(est_depths*255,tf.uint8))     
+                     1.0/est_depths)     
 
     tf.summary.image('gt_depth' , \
                      1.0/gt_depths)
@@ -227,6 +264,13 @@ def rnn_depth_train(dataset,FLAGS):
     tf.summary.image('difference' , \
                      1.0/est_depth1-1.0/est_depth2)
 
+
+    tf.summary.scalar('valid/abs_depth', abs_depth)
+    tf.summary.image('valid_est_depth' , \
+                     1.0/est_depths_val)     
+
+    tf.summary.image('valid_gt_depth' , \
+                     1.0/gt_depths_val)
 
     # tf.summary.image('validate_pred',
     #     pred_valid[0][:,20:height-20,30:width-30,:])
@@ -273,11 +317,17 @@ def rnn_depth_train(dataset,FLAGS):
             #_valid_state = np.zeros([1,dataset['height'],dataset['width'],1])
 
             if step % FLAGS.summary_freq == 0:
+
                 fetches["loss"] = total_loss
                 fetches["summary"] = merged
                 fetches["learn_rate"] = learning_rate
-                fetches["pred_poses"] = pred_poses
-                fetches["gt_poses"] = gt_poses
+                fetches["pred_3d"] = test
+                fetches["image"] = test_img
+
+                if(dataset_valid is not None):
+                    
+                    fetches["validate"] = abs_depth
+                # fetches["gt_poses"] = gt_poses
 
 
             feed_dict = {}
@@ -305,8 +355,6 @@ def rnn_depth_train(dataset,FLAGS):
 
             #import pdb;pdb.set_trace()
 
-            # for count in range(len(m_test)):
-            #     save_sfs_ply('gt%2d.ply'%count,m_test[count],m_testimg[count])
 
             if step % FLAGS.summary_freq == 0:
                 
@@ -319,15 +367,22 @@ def rnn_depth_train(dataset,FLAGS):
 
                 print("learning rate %f" % (results["learn_rate"]))
 
-                print("Pred poses 1")
-                print(results["pred_poses"][0])
-                print(results["gt_poses"][0])
-                print("Pred poses 5")
-                print(results["pred_poses"][4])
-                print(results["gt_poses"][4])
-                print("Pred poses 10")
-                print(results["pred_poses"][9])
-                print(results["gt_poses"][9])                
+                m_test = results["pred_3d"]
+                m_testimg = results["image"]
+
+                for count in range(len(m_test)):
+                    save_sfs_ply('pred%2d.ply'%count,m_test[count],((m_testimg[count]+0.5)*255).astype(np.uint8))
+
+
+                # print("Pred poses 1")
+                # print(results["pred_poses"][0])
+                # print(results["gt_poses"][0])
+                # print("Pred poses 5")
+                # print(results["pred_poses"][4])
+                # print(results["gt_poses"][4])
+                # print("Pred poses 10")
+                # print(results["pred_poses"][9])
+                # print(results["gt_poses"][9])
 
 
 

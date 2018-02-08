@@ -591,7 +591,7 @@ def compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS):
             depth_loss = 0
             cam_loss = 0
             loss_depth_sig = 0
-            threeD_loss = 0
+            threeD_loss = 0.0
 
 
             #Convert label to 3D
@@ -638,31 +638,36 @@ def compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS):
                 curr_label = tf.image.resize_area(label, 
                     [int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
 
-                pixel_coords = meshgrid(int(batch_size), int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)))
+          #       pixel_coords = meshgrid(int(batch_size), int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)))
 
-                #import pdb;pdb.set_trace()
-                # Generate ground truth 3D
-                curr_label.set_shape([batch_size,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)),1])
-                cam_coords = pixel2cam(tf.squeeze((1.0/curr_label), axis=3), pixel_coords, intrinsics/(2**s))
-                cam_coords = tf.reshape(cam_coords, [batch_size, 4, -1])
-                cam_coords = tf.matmul(GT_proj_r2l, cam_coords)
-                cam_coords = tf.reshape(cam_coords, [batch_size,-1,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
-                cam_coords = tf.transpose(cam_coords, perm=[0, 2, 3, 1])[:,:,:,0:3]
+          #       #import pdb;pdb.set_trace()
+          #       # Generate ground truth 3D
+          #       curr_label.set_shape([batch_size,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)),1])
+          #       cam_coords = pixel2cam(tf.squeeze((1.0/curr_label), axis=3), pixel_coords, intrinsics/(2**s))
+
+          #       #condition = tf.equal(cam_coords, 0)
+
+          #       cam_coords = tf.reshape(cam_coords, [batch_size, 4, -1])
+          #       cam_coords = tf.matmul(GT_proj_r2l, cam_coords)
+          #       cam_coords = tf.reshape(cam_coords, [batch_size,-1,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
+          #       cam_coords = tf.transpose(cam_coords, perm=[0, 2, 3, 1])[:,:,:,0:3]
+          #       condition = tf.equal(cam_coords, 0)
+		        # # Generate pred 3D
 
 
-                # Generate pred 3D
-                cur_pred = pred_depth[s]
-                cur_pred.set_shape([batch_size,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)),1])
-                pred_3D = pixel2cam(tf.squeeze((1.0/cur_pred), axis=3), pixel_coords, intrinsics/(2**s))
-                pred_3D = tf.reshape(pred_3D, [batch_size, 4, -1]) 
-                pred_3D = tf.matmul(proj_r2l, pred_3D)
-                pred_3D = tf.reshape(pred_3D, [batch_size,-1,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
-                pred_3D = tf.transpose(pred_3D, perm=[0, 2, 3, 1])[:,:,:,0:3]
 
 
                 #=======
                 #sig depth loss
                 #=======
+
+                #=======
+                #Smooth loss
+                #=======
+                #threeD_loss += FLAGS.smooth_weight/(2**s) * \
+                #    compute_smooth_loss(1.0/pred_depth[s])
+
+
                 if s==0:
                     sig_params = {'deltas':[1,2,4,8,16], 'weights':[1,1,1,1,1], 'epsilon': 0.001}
                 else:
@@ -679,9 +684,10 @@ def compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS):
                 #=======
                 #3D loss
                 #=======
-                diff = sops.replace_nonfinite(cam_coords - pred_3D)
-                curr_threeD_error = tf.abs(diff)
-                threeD_loss += tf.reduce_mean(curr_threeD_error)*threeD_weight/(2**s)
+                # diff = sops.replace_nonfinite(cam_coords - pred_3D)
+                # diff = tf.where(condition, cam_coords, diff)
+                # curr_threeD_error = tf.abs(diff)
+                # threeD_loss += tf.reduce_mean(curr_threeD_error)*threeD_weight/(2**s)
 
 
                 #=======
@@ -707,9 +713,17 @@ def compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS):
 
 
 
-                # if s==0:
-                #     test.append(cam_coords[0,:,:,:])
-                #     testimg.append(image[0,:,:,:])
+                if s==0:
+                    pixel_coords = meshgrid(int(batch_size), int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)))
+                    cur_pred = pred_depth[s]
+                    cur_pred.set_shape([batch_size,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s)),1])
+                    pred_3D = pixel2cam(tf.squeeze((1.0/cur_pred), axis=3), pixel_coords, intrinsics/(2**s))
+                    pred_3D = tf.reshape(pred_3D, [batch_size, 4, -1]) 
+                    pred_3D = tf.matmul(proj_r2l, pred_3D)
+                    pred_3D = tf.reshape(pred_3D, [batch_size,-1,int(FLAGS.resizedheight/(2**s)), int(FLAGS.resizedwidth/(2**s))])
+                    pred_3D = tf.transpose(pred_3D, perm=[0, 2, 3, 1])[:,:,:,0:3]
+                    test.append(pred_3D[0,:,:,:])
+                    testimg.append(image[0,:,:,:])
 
             depth_loss_total.append(depth_loss)
             loss_depth_sig_total.append(loss_depth_sig)
@@ -724,4 +738,4 @@ def compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS):
         rnn_loss['threeD_loss'] = tf.reduce_mean(loss_threeD_total)
         #rnn_loss['proj_left'] = test_gtcam;
 
-    return rnn_loss,pred_poses,gt_poses
+    return rnn_loss,test,testimg

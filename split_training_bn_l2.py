@@ -17,7 +17,7 @@ from PIL import Image
 
 flags = tf.app.flags
 flags.DEFINE_string("dataset_dir", "", "Dataset directory")
-flags.DEFINE_string("validate_dir", "./validation", "Dataset directory")
+flags.DEFINE_string("valid_dir", "none", "Dataset directory")
 flags.DEFINE_string("checkpoint_dir", "./checkpoints/", "Directory name to save the checkpoints")
 flags.DEFINE_string("checkpoint_dir_single", "./checkpoints_single/", "Directory name to save the checkpoints")
 flags.DEFINE_integer("image_height", 480, "The size of of a sample batch")
@@ -405,6 +405,7 @@ def main(_):
         #============================================
         with tf.name_scope("data_loading"):
             imageloader = DataLoader(FLAGS.dataset_dir,
+                                     FLAGS.valid_dir,
                                      FLAGS.batch_size,
                                      FLAGS.image_height, 
                                      FLAGS.image_width,
@@ -412,6 +413,7 @@ def main(_):
                                      FLAGS.num_scales)
 
             dataset = imageloader.load_train_batch_hs()
+            dataset_val = imageloader.load_valid_batch_hs()
 
 
         
@@ -429,7 +431,7 @@ def main(_):
         #============================================
         #Run RNN depth training
         #============================================
-        rnn_depth_train(dataset,FLAGS)
+        rnn_depth_train(dataset,dataset_val,FLAGS)
 
 
 
