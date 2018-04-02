@@ -13,10 +13,10 @@ from my_losses_seq import *
 
 from tensorflow.contrib.slim.python.slim.learning import train_step
 from util import *
+
+
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
-
-
+os.environ["CUDA_VISIBLE_DEVICES"]="2"
 
 ####################
 #Validate
@@ -53,9 +53,10 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
         width = dataset['width']
         batch_size = dataset['batch_size']
 
-        # init_state1 = tf.placeholder(tf.float32,[batch_size,height,width,16])
-        # init_state2 = tf.placeholder(tf.float32,[batch_size,height/2,width/2,32])
-        # init_state3 = tf.placeholder(tf.float32,[batch_size,height/4,width/4,64])
+        init_state1 = tf.placeholder(tf.float32,[batch_size,height,width,16])
+        init_state2 = tf.placeholder(tf.float32,[batch_size,height/2,width/2,32])
+        init_state3 = tf.placeholder(tf.float32,[batch_size,height/4,width/4,64])
+        init_state4 = tf.placeholder(tf.float32,[batch_size,height/8,width/8,128])
 
         #Define model
         global_step = tf.Variable(0, 
@@ -65,7 +66,7 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
                                      global_step+1)
 
         state_series = []
-        hidden_state = None#[init_state1,init_state2,init_state3]#None
+        hidden_state = [init_state1,init_state2,init_state3,init_state4]#None
      
         #The first view is target view so -1
         for i in range(num_views):
@@ -77,18 +78,18 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
                                   [0, 0, width*i, 0], 
                                   [-1, -1, int(width), -1])
 
-            #pred_depth, hidden_state,pred_pose, _ = rnn_depth_net_hidst(image,hidden_state,is_training=True)
+            pred_depth, hidden_state,pred_pose, _ = rnn_depth_net_hidst(image,hidden_state,is_training=True)
             image.set_shape([batch_size,height,width,3])
             #image.set_shape([self.resizedheight,self.resizedwidth*self.num_views, 3])
-            pred_depth, hidden_state, pred_pose = residual_u_network(image,hidden_state)
+            #pred_depth, hidden_state, pred_pose = residual_u_network(image,hidden_state)
             scope.reuse_variables()
             state_series.append([pred_depth,pred_pose])
         
             if i==0:
-                est_depths = pred_depth
+                est_depths = pred_depth[0]
                 gt_depths = depth
             else:
-                est_depths = tf.concat([est_depths,pred_depth],axis = 2)
+                est_depths = tf.concat([est_depths,pred_depth[0]],axis = 2)
                 gt_depths = tf.concat([gt_depths,depth],axis = 2)
 
 
@@ -104,7 +105,7 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
             motions_val = dataset_valid['motions']
 
             state_series_val = []
-            hidden_state = None#[init_state1,init_state2,init_state3]#
+            hidden_state = [init_state1,init_state2,init_state3,init_state4]#
          
             #The first view is target view so -1
             for i in range(num_views_val):
@@ -118,16 +119,16 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
 
                 image_val.set_shape([batch_size,height,width,3])
                 scope.reuse_variables()
-                #pred_depth_val, hidden_state,pred_pose_val, _ = rnn_depth_net_hidst(image_val,hidden_state,is_training=False)
-                pred_depth_val, hidden_state,pred_pose_val = residual_u_network(image_val,hidden_state)
+                pred_depth_val, hidden_state,pred_pose_val, _ = rnn_depth_net_hidst(image_val,hidden_state,is_training=False)
+                #pred_depth_val, hidden_state,pred_pose_val = residual_u_network(image_val,hidden_state)
                 #scope.reuse_variables()
                 #state_series_val.append([pred_depth_val,pred_pose_val])
 
                 if i==0:
-                    est_depths_val = pred_depth_val
+                    est_depths_val = pred_depth_val[0]
                     gt_depths_val = depth_val
                 else:
-                    est_depths_val = tf.concat([est_depths_val,pred_depth_val],axis = 2)
+                    est_depths_val = tf.concat([est_depths_val,pred_depth_val[0]],axis = 2)
                     gt_depths_val = tf.concat([gt_depths_val,depth_val],axis = 2)
 
             #import pdb;pdb.set_trace()
@@ -135,7 +136,7 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
             # abs_depth = tf.abs(abs_depth)
             # abs_depth = tf.reduce_mean(abs_depth) 
             d = sops.replace_nonfinite(tf.log(1.0/gt_depths_val) - tf.log(1.0/est_depths_val))
-            abs_depth = tf.sqrt(tf.reduce_mean(d**2)-tf.reduce_mean(d)**2)           
+            abs_depth = tf.sqrt(tf.reduce_mean(d**2)-tf.reduce_mean(d)**2)
 
     # valleft = tf.placeholder(shape=[1, FLAGS.resizedheight, FLAGS.resizedwidth, 3], dtype=tf.float32)
     # valright = tf.placeholder(shape=[1, FLAGS.resizedheight, FLAGS.resizedwidth, 3], dtype=tf.float32)
@@ -147,8 +148,8 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
     #==============
     #Compute Loss and define bp
     #==============
-    rnn_loss,test,test_img,testgt = compute_loss_rnn_lstm(dataset,state_series,global_step,FLAGS)
-    #rnn_loss,test,test_img = compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS)
+    #rnn_loss,test,test_img,testgt = compute_loss_rnn_lstm(dataset,state_series,global_step,FLAGS)
+    rnn_loss,predpose,gtpose = compute_loss_rnn_hs(dataset,state_series,global_step,FLAGS)
     total_loss = rnn_loss['depth_loss']+rnn_loss['loss_depth_sig'] + rnn_loss['cam_loss']+ rnn_loss['threeD_loss']
 
     # Specify the optimization scheme:
@@ -238,7 +239,7 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
     #import pdb;pdb.set_trace()
     #restore_saver = tf.train.Saver(restore_var)
     
-    saver = tf.train.Saver([var for var in tf.global_variables()])     #tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, 'model_rnndepth'),max_to_keep=10   
+    saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, 'model_rnndepth'))#[var for var in tf.global_variables()])     #tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, 'model_rnndepth'),max_to_keep=10   
 
     #==============
     #Tensorboard plot
@@ -309,7 +310,7 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
 
     #Session
     config = tf.ConfigProto()
-    config.gpu_options.per_process_gpu_memory_fraction = 1.0
+    config.gpu_options.per_process_gpu_memory_fraction = 0.9
     with tf.Session(config=config) as sess:
 
         merged = tf.summary.merge_all()
@@ -345,25 +346,28 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
                         }
 
 
-                    # _init_state = [np.zeros([dataset['batch_size'],dataset['height'],dataset['width'],16]),
-                    #                 np.zeros([dataset['batch_size'],int(dataset['height']/2),int(dataset['width']/2),32]),
-                    #                 np.zeros([dataset['batch_size'],int(dataset['height']/4),int(dataset['width']/4),64])]
+                    _init_state = [np.zeros([dataset['batch_size'],dataset['height'],dataset['width'],16]),
+                                    np.zeros([dataset['batch_size'],int(dataset['height']/2),int(dataset['width']/2),32]),
+                                    np.zeros([dataset['batch_size'],int(dataset['height']/4),int(dataset['width']/4),64]),
+                                    np.zeros([dataset['batch_size'],int(dataset['height']/8),int(dataset['width']/8),128])]
 
                     if step % FLAGS.summary_freq == 0:
 
                         fetches["loss"] = total_loss
                         fetches["summary"] = merged
                         fetches["learn_rate"] = learning_rate
-                        fetches["pred_3d"] = test
-                        fetches["image"] = test_img
-                        fetches["gt_3d"] = testgt
+                        #fetches["pred_3d"] = test
+                        #fetches["image"] = test_img
+                        #fetches["gt_3d"] = testgt
+                        fetches["predpose"] = predpose
+                        fetches["gtpose"] = gtpose
                         fetches["angle"] = dataset['angle']
 
                     if(dataset_valid is not None):
                         
                         fetches["validate"] = abs_depth
 
-                    results= sess.run(fetches)#,feed_dict={init_state1: _init_state[0],init_state2: _init_state[1],init_state3: _init_state[2]}) #,valid_init_state:_valid_state
+                    results= sess.run(fetches,feed_dict={init_state1: _init_state[0],init_state2: _init_state[1],init_state3: _init_state[2],init_state4: _init_state[3]}) #,valid_init_state:_valid_state
 
 
                     if step % FLAGS.summary_freq == 0:
@@ -377,17 +381,19 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
 
                         print("learning rate %f" % (results["learn_rate"]))
 
-                        m_test = results["pred_3d"]
-                        m_testimg = results["image"]
-                        m_testgt = results["gt_3d"]
-                        m_angle = results["angle"]
+                        # m_test = results["pred_3d"]
+                        # m_testimg = results["image"]
+                        # m_testgt = results["gt_3d"]
+                        # m_angle = results["angle"]
+                        m_predpose =  results["predpose"]
+                        m_gtpose = results["gtpose"] 
 
                         if step == 1:
                             print("sig weight: %f"%(m_test))
 
                         print("pred cam"  )
                         firstfew = 0
-                        for precam in m_testimg:
+                        for precam in m_predpose:
                             
                             if firstfew%2==0:
                                 print(precam[0])
@@ -395,7 +401,7 @@ def rnn_depth_train(dataset,dataset_valid,FLAGS):
                         
                         print("GT cam ")
                         firstfew = 0
-                        for gtcam in m_testgt:
+                        for gtcam in m_gtpose:
                             
                             if firstfew%2==0:
                                 print(gtcam[0])

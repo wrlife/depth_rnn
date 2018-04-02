@@ -299,8 +299,8 @@ def save_xyz(filename,points3D):
 
 def bilinear_interpolate(im, x, y):
     
-    mask = np.zeros_like(im)
-
+    #mask = np.zeros_like(im)
+    import pdb;pdb.set_trace()
     x = np.asarray(x)
     y = np.asarray(y)
 
@@ -329,10 +329,8 @@ def bilinear_interpolate(im, x, y):
     wc = (x-x0) * (y1-y)
     wd = (x-x0) * (y-y0)
 
-    wmask = wa+wb+wc+wd
 
-
-    return wa.reshape([len(wa),1])*Ia + wb.reshape([len(wb),1])*Ib + wc.reshape([len(wc),1])*Ic + wd.reshape([len(wd),1])*Id,wmask
+    return wa.reshape([len(wa),1])*Ia + wb.reshape([len(wb),1])*Ib + wc.reshape([len(wc),1])*Ic + wd.reshape([len(wd),1])*Id
 
 
 def get_camera_grid(width,height,cx,cy,fx,fy):

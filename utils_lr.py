@@ -74,6 +74,49 @@ def euler2mat(z, y, x):
   
   return rotMat
 
+# Checks if a matrix is a valid rotation matrix.
+# def isRotationMatrix(R) :
+#     Rt = np.transpose(R)
+#     shouldBeIdentity = np.dot(Rt, R)
+#     I = np.identity(3, dtype = R.dtype)
+#     n = np.linalg.norm(I - shouldBeIdentity)
+#     return n < 1e-6
+
+# Calculates rotation matrix to euler angles
+# The result is the same as MATLAB except the order
+# of the euler angles ( x and z are swapped ).
+def rotationMatrixToEulerAngles(R) :
+ 
+    #assert(isRotationMatrix(R))
+
+  sy = tf.sqrt(R[:,0,0] * R[:,0,0] +  R[:,1,0] * R[:,1,0])
+  eps = tf.constant(1e-6,dtype=tf.float32,shape=sy.get_shape())
+  singular = tf.less(sy, eps)
+  x = tf.expand_dims(tf.where(singular, tf.atan2(-R[:,1,2], R[:,1,1]), tf.atan2(R[:,2,1] , R[:,2,2])),1)
+  y = tf.expand_dims(tf.where(singular, tf.atan2(-R[:,2,0], sy), tf.atan2(-R[:,2,0], sy)),1)
+  z = tf.expand_dims(tf.where(singular, tf.constant(0,dtype=tf.float32,shape=sy.get_shape()), tf.atan2(R[:,1,0], R[:,0,0])),1)
+  eulerangle = tf.concat([x,y,z],axis=1)
+  # for i in range(B.eval()):
+  #   sy = tf.sqrt(R[i,0,0] * R[i,0,0] +  R[i,1,0] * R[i,1,0])
+  #   eps = tf.constant(1e-6,dtype=float32)
+  #   singular = tf.less(sy, eps)
+
+  #   if  not singular :
+  #       x = tf.atan2(R[i,2,1] , R[i,2,2])
+  #       y = tf.atan2(-R[i,2,0], sy)
+  #       z = tf.atan2(R[i,1,0], R[i,0,0])
+  #   else :
+  #       x = tf.atan2(-R[i,1,2], R[i,1,1])
+  #       y = tf.atan2(-R[i,2,0], sy)
+  #       z = tf.constant(0,dtype=float32)
+  #   if i==0:
+  #     eulerangle = tf.expend_dims(tf.concat(x,y,z),0)
+  #   else:
+  #     eulerangle = tf.concat(eulerangle,tf.expend_dims(tf.concat(x,y,z),0),axis=0)
+
+  return eulerangle
+
+
 def axis_angle_to_rotation_matrix(axis, angle):
 
 
@@ -253,7 +296,60 @@ def projective_inverse_warp(img, depth, pose, intrinsics,format='eular'):
 
   output_img,wmask = bilinear_sampler(img, src_pixel_coords)
 
+
   return output_img,src_pixel_coords,wmask, src_depth,pose
+
+
+
+def random_ROT_warp(img, depth, pose, intrinsics,format='eular'):
+  """Inverse warp a source image to the target image plane based on projection.
+
+  Args:
+    img: the source image [batch, height_s, width_s, 3]
+    depth: depth map of the target image [batch, height_t, width_t]
+    pose: target to source camera transformation matrix [batch, 6], in the
+          order of tx, ty, tz, rx, ry, rz
+    intrinsics: camera intrinsics [batch, 3, 3]
+  Returns:
+    Source image inverse warped to the target image plane [batch, height_t,
+    width_t, 3]
+  """
+  batch, height, width, _ = img.get_shape().as_list()
+  # Convert pose vector to matrix
+  #import pdb;pdb.set_trace()
+  if format=='eular' or format=='angleaxis':
+    pose = pose_vec2mat(pose,format)
+  # Construct pixel grid coordinates
+  pixel_coords = meshgrid(batch, height, width)
+  # Convert pixel coordinates to the camera frame
+  cam_coords = pixel2cam(depth, pixel_coords, intrinsics)
+  # Construct a 4x4 intrinsic matrix (TODO: can it be 3x4?)
+  filler = tf.constant([0.0, 0.0, 0.0, 1.0], shape=[1, 1, 4])
+  filler = tf.tile(filler, [batch, 1, 1])
+  intrinsics = tf.concat([intrinsics, tf.zeros([batch, 3, 1])], axis=2)
+  intrinsics = tf.concat([intrinsics, filler], axis=1)
+  # Get a 4x4 transformation matrix from 'target' camera frame to 'source'
+  # pixel frame.
+  proj_tgt_cam_to_src_pixel = tf.matmul(intrinsics, pose)
+  src_pixel_coords, src_depth = cam2pixel(cam_coords, proj_tgt_cam_to_src_pixel)
+  #out_img,out_depth = extract_image(img,src_pixel_coords,src_depth)
+
+  out_img,_ = bilinear_sampler(img, src_pixel_coords)
+
+  depth = tf.expand_dims(depth, -1)
+
+  out_depth,_ = bilinear_sampler(depth, src_pixel_coords)
+
+  return out_img,out_depth
+
+def extract_image(img,src_pixel_coords,src_depth):
+
+  batch, height, width, _ = img.get_shape().as_list()
+
+  out_img = tf.zeros([batch,height,width,3])
+  out_depth = tf.zeros([batch,height,width,1])
+
+  return out_img,out_depth
 
 def optflow_warp(img,flowx,flowy):
 
@@ -366,6 +462,9 @@ def bilinear_sampler(imgs, coords):
     return output,wmask
 
 
+
+
+
 def consistent_depth_loss(src_depth,pred_src_depth, coords):
   """Construct a new image by bilinear sampling from the input image.
 
@@ -394,7 +493,7 @@ def consistent_depth_loss(src_depth,pred_src_depth, coords):
     inp_size = src_depth.get_shape()
     coord_size = coords.get_shape()
     out_size = coords.get_shape().as_list()
-    out_size[3] = src_depth.get_shape().as_list()[3]
+    out_size[3] = src_depth.get_shape().as_list()[3]   
 
     coords_x = tf.cast(coords_x, 'float32')
     coords_y = tf.cast(coords_y, 'float32')
